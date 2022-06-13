@@ -5,8 +5,9 @@ if test -z "$KNTYDIR"; then
 	exit 1
 fi
 
-# TODO: set the hostname to a static value here
-# Then, on boot, discover hostname via rdns or something
+# mkimage.sh will call this with a HOSTNAME of "alpine",
+# and that's what the hostname will be when the image first boots.
+# We later set it in a local.d script.
 HOSTNAME="$1"
 if [ -z "$HOSTNAME" ]; then
 	echo "usage: $0 hostname"
@@ -81,12 +82,6 @@ install -o root -g root -m 0755 -d "$tmp"/knty
 # Mount inside of that, so that no matter what filesystem permissions in the knty-secret mount are,
 # no user except root will be able to read the files there.
 install -o root -g root -m 0700 -d "$tmp"/knty/secret "$tmp"/knty/secret/mount
-
-
-
-# TODO: configure filesystem at /data or whatever
-# TODO: configure more complex post-boot. ansible?
-# TODO: tailscale
 
 
 
