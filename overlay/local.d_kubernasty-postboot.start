@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+
+if test -e /etc/kubernasty/postboot.finished; then
+	logger --stderr --priority user.info --tag kubernasty-postboot "Kubernasty postboot has already run once, nothing to do"
+	exit 0
+fi
+
+printf '\nLABEL=knty-secret /knty/secret/mount ext4 ro,noauto 0 0\n' >> /etc/fstab
+logger --stderr --priority user.debug --tag kubernasty-postboot "Mounting knty secret volume..."
+mount /knty/secret/mount
+
+# This is intended to make it easier during development
+if test -e /knty/secret/mount/TESTONLYNOPROD.env; then
+	. /knty/secret/mount/TESTONLYNOPROD.env
+	if test "$KNTY_TESTING_ONLY_NO_PROD_ADD_TOOR_BLANK_PW" = yes; then
+		useradd --home-dir /root --no-create-home --no-user-group --non-unique --uid 0 --gid 0 toor
+		passwd -d toor
+		logger --stderr --priority user.warn --tag kubernasty-postboot "WARNING: Added toor user with blank password"
+	fi
+fi
+
+export KNTY_NODENAME="$(cat /knty/secret/mount/nodename)"
+export KNTY_AGEKEY=/knty/secret/mount/age.key
+
+logger --stderr --priority user.debug --tag kubernasty-postboot "Values from the knty secret volume: $(env | grep '^KNTY_')"
+env | grep '^KNTY_' > /etc/profile.d/knty-secret.sh
+chmod 644 /etc/profile.d/knty-secret.sh
+
+. /etc/kubernasty/postboot.secrets
+
+setup-keymap us us
+setup-hostname "$KNTY_NODENAME"
+setup-interfaces -a # configures DHCP
+#setup-dns -d knty.micahrl.com 8.8.8.8
+
+logger --stderr --priority user.debug --tag kubernasty-postboot "Finished configuring keymap, hostname, dns"
+
+ssh_key_mrled_haluth='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMN/4Rdkz4vlGaQRvhmhLhkaH0CfhNnoggGBBknz17+u mrled@haluth.local'
+ssh_key_psyops='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ/zN5QLrTpjL1Qb8oaSniRQSwWpe5ovenQZOLyeHn7m conspirator@PSYOPS'
+
+usermod --password "$ROOTPASSWD" root
+install -o root -g root -m 0700 -d /root/.ssh
+echo "$ssh_key_psyops" >> /root/.ssh/authorized_keys
+
+useradd --home-dir /home/mrled --create-home --shell /bin/bash --user-group --password "$MRLEDPASSWD" mrled
+install -o mrled -g mrled -m 0700 -d /home/mrled/.ssh
+echo "$ssh_key_mrled_haluth" >> /home/mrled/.ssh/authorized_keys
+
+logger --stderr --priority user.debug --tag kubernasty-postboot "Added users and configured ssh keys"
+
+touch /etc/kubernasty/postboot.finished
